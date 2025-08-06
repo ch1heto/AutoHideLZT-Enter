@@ -206,6 +206,24 @@
         process(root);
     }
 
+    function insertTextAtCursor(text) {
+        const sel = window.getSelection();
+        if (!sel.rangeCount) return;
+
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+
+        const textNode = document.createTextNode(text);
+        range.insertNode(textNode);
+
+        // Помещаем курсор после вставленного текста
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+
+
     // --- Вспомогательная функция для навешивания обработчиков ---
     function attachAutoCapitalize(el, type = "auto") {
         if (!el || el._autoCapitalizeAttached) return;
@@ -362,52 +380,45 @@
 
     // Функция для обработки нажатия клавиши Enter
     function handleEnterKey(event) {
-        // Проверяем состояние hideOnEnter
-        if (!hideOnEnter) {
-            // Если галочка не включена, просто предотвращаем действие Enter
+        // Проверка, только если включена настройка
+        if (!hideOnEnter) return;
+
+        // Если Shift+Enter — разрешаем обычный перенос строки
+        if (event.key === "Enter" && event.shiftKey) {
+            event.preventDefault(); // блокируем дефолтный перенос
+            insertTextAtCursor("\n");
             return;
         }
+
 
         const inputSearchElement = document.querySelector('input[name="keywords"]');
         if (event.target === inputSearchElement && event.key === "Enter") {
-            console.log("Поиск выполнен: ", inputSearchElement.value);
-            return;
+            return; // Поиск
         }
 
-        // Проверка, находимся ли мы в одной из форм, где нужно заблокировать Enter
         const formElement = event.target.closest(
             'form[action="conversations/insert"], ' +
             'form[action^="posts/"][action$="/save-inline"], ' +
             'form[action^="profile-posts/comments/"][action$="/edit"]',
         );
+        if (formElement) return;
 
-        if (formElement) {
-            return; // Если фокус на одной из форм, просто выходим
+        // Только если это Enter без Shift
+        if (event.key === "Enter") {
+            const inputElement = document.querySelector(
+                '.fr-element.fr-view[contenteditable="true"]:focus'
+            );
+
+            if (!inputElement || isInvalidAction(inputElement)) return;
+
+            event.preventDefault(); // Останавливаем Enter по умолчанию
+            event.stopPropagation(); // Блокируем дальнейшее распространение
+
+            updateHtmlContent(inputElement);
+            handleSendMessage(inputElement);
         }
-
-        // Проверяем, это клавиша Enter без зажатого Shift
-        if (!(event.key === "Enter" || event.keyCode === 13) || event.shiftKey) {
-            return; // Если это не Enter или зажат Shift, выходим
-        }
-
-        // Определяем, это ли редактор или чат
-        const inputElement = document.querySelector(
-            '.fr-element.fr-view[contenteditable="true"]:focus',
-        );
-        if (!inputElement) {
-            return;
-        }
-
-        if (isInvalidAction(inputElement)) {
-            return;
-        }
-
-        event.preventDefault(); // Предотвращаем стандартное поведение
-        event.stopPropagation(); // Останавливаем дальнейшую обработку события
-
-        updateHtmlContent(inputElement);
-        handleSendMessage(inputElement);
     }
+
 
     // Добавляем обработчик события клика на кнопку отправки сообщения
     document.addEventListener("mousedown", (event) => {
